@@ -9,19 +9,14 @@ import ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# --- Gemini API Configuration ---
-
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    # (Removed model listing for cleaner UI)
-    # Try using the most likely model name
     model = genai.GenerativeModel('models/gemini-2.5-flash')
 except (KeyError, AttributeError):
     st.error("🚨 Gemini API Key not found. Please add it to your Streamlit secrets.", icon="🚨")
     model = None
 
 def get_sentiment(text):
-    """Analyzes the sentiment of a given text."""
     analysis = TextBlob(text)
     if analysis.sentiment.polarity > 0.1:
         return 'Positive'
@@ -31,9 +26,6 @@ def get_sentiment(text):
         return 'Neutral'
 
 def get_stock_list():
-    """Returns a list of Nifty 500 stock tickers."""
-    # A comprehensive list of Nifty 500 stocks. For brevity, this list is truncated.
-    # In a real application, you would load this from a file or API.
     return sorted([
         'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'INFY.NS', 'BHARTIARTL.NS', 'HINDUNILVR.NS',
         'SBIN.NS', 'LICI.NS', 'ITC.NS', 'HCLTECH.NS', 'LT.NS', 'BAJFINANCE.NS', 'KOTAKBANK.NS', 'MARUTI.NS',
@@ -55,7 +47,6 @@ def get_stock_list():
     ])
 
 def main():
-    """Main function to run the Streamlit web app."""
     st.set_page_config(page_title="Advanced Indian Stock Analysis", page_icon="🧠", layout="wide")
 
     st.title("🧠 Advanced Stock Analysis Dashboard")
@@ -63,7 +54,6 @@ def main():
     A high-tech dashboard for deep analysis of Indian stocks, combining technicals, fundamentals, news sentiment, and AI insights.
     """)
 
-    # --- Sidebar ---
     with st.sidebar:
         st.header("🔍 Search Stock")
         stock_list = get_stock_list()
@@ -75,7 +65,6 @@ def main():
         if model:
             if "chat" not in st.session_state:
                 st.session_state.chat = model.start_chat(history=[])
-            # Display chat history without duplicating on rerun
             for message in st.session_state.chat.history:
                 with st.chat_message("You" if message.role == "user" else "FinBot"):
                     st.markdown(message.parts[0].text)
@@ -87,7 +76,6 @@ def main():
         else:
             st.warning("Chatbot is disabled as the Gemini API key is not configured.")
 
-    # --- Main Panel ---
     if analyze_button:
         if not stock_ticker:
             st.error("Please select a stock ticker.")
@@ -95,9 +83,8 @@ def main():
 
         try:
             with st.spinner(f"Running deep analysis for {stock_ticker}..."):
-                # --- Data Fetching ---
                 ticker = yf.Ticker(stock_ticker)
-                history = ticker.history(period="2y") # Fetch 2 years for better TA
+                history = ticker.history(period="2y")
                 if history.empty:
                     st.error(f"Could not find data for ticker: {stock_ticker}.")
                     return
@@ -106,26 +93,20 @@ def main():
                 search = gn.search(f'{info.get("shortName", stock_ticker)} stock', when='7d')
                 news_articles = search['entries']
 
-                # --- Advanced Technical Analysis ---
-                # Add technical indicators using ta
                 history['SMA_50'] = ta.trend.sma_indicator(history['Close'], window=50)
                 history['SMA_200'] = ta.trend.sma_indicator(history['Close'], window=200)
                 history['RSI_14'] = ta.momentum.rsi(history['Close'], window=14)
-                macd = ta.trend.macd(history['Close'])
-                macd_signal = ta.trend.macd_signal(history['Close'])
-                macd_diff = ta.trend.macd_diff(history['Close'])
-                history['MACD_12_26_9'] = macd
-                history['MACDs_12_26_9'] = macd_signal
-                history['MACDh_12_26_9'] = macd_diff
+                macd = ta.trend.MACD(history['Close'])
+                history['MACD_12_26_9'] = macd.macd()
+                history['MACDs_12_26_9'] = macd.macd_signal()
+                history['MACDh_12_26_9'] = macd.macd_diff()
                 history['volume_ma_20'] = history['Volume'].rolling(window=20).mean()
                 history['high_50d'] = history['High'].rolling(window=50).max()
 
-                # --- Extract Signals ---
                 last_row = history.iloc[-1]
                 volume_surge = "✅ Surge" if last_row['Volume'] > 1.8 * last_row['volume_ma_20'] else "Normal"
                 breakout_signal = "🔥 Breakout" if last_row['Close'] > history['high_50d'].iloc[-2] else "No"
                 
-                # --- News and Sentiment ---
                 df_news = pd.DataFrame()
                 if news_articles:
                     df_news = pd.DataFrame([{"Title": a.title, "Published": a.published, "Source": a.source.title} for a in news_articles[:20]])
@@ -136,7 +117,6 @@ def main():
 
             st.header(f"{info.get('shortName', stock_ticker)} ({info.get('symbol', '')})")
             
-            # --- AI-Powered Summary ---
             if model:
                 with st.spinner("🤖 Generating AI-powered analysis summary..."):
                     try:
@@ -171,28 +151,23 @@ def main():
                     except Exception as e:
                         st.warning(f"Could not generate AI summary: {e}")
 
-            # --- Tabbed Interface ---
             tab1, tab2, tab3 = st.tabs(["📊 Price Analysis", "📑 Fundamental Data", "📰 News & Sentiment"])
 
             with tab1:
                 st.subheader("Interactive Price Chart & Technical Indicators")
                 
-                # Create figure with secondary y-axis
                 fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, 
                                     row_heights=[0.6, 0.2, 0.2])
 
-                # Candlestick chart
                 fig.add_trace(go.Candlestick(x=history.index, open=history['Open'], high=history['High'],
                                              low=history['Low'], close=history['Close'], name='Price'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=history.index, y=history['SMA_50'], mode='lines', name='50-Day SMA', line=dict(color='orange')), row=1, col=1)
                 fig.add_trace(go.Scatter(x=history.index, y=history['SMA_200'], mode='lines', name='200-Day SMA', line=dict(color='purple')), row=1, col=1)
 
-                # RSI chart
                 fig.add_trace(go.Scatter(x=history.index, y=history['RSI_14'], mode='lines', name='RSI'), row=2, col=1)
                 fig.add_hline(y=70, col=1, row=2, line_dash="dash", line_color="red")
                 fig.add_hline(y=30, col=1, row=2, line_dash="dash", line_color="green")
 
-                # MACD chart
                 fig.add_trace(go.Scatter(x=history.index, y=history['MACD_12_26_9'], mode='lines', name='MACD'), row=3, col=1)
                 fig.add_trace(go.Scatter(x=history.index, y=history['MACDs_12_26_9'], mode='lines', name='Signal'), row=3, col=1)
                 fig.add_trace(go.Bar(x=history.index, y=history['MACDh_12_26_9'], name='Histogram'), row=3, col=1)
