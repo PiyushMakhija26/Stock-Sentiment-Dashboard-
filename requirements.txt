@@ -6,3 +6,6 @@ pygooglenews
 google-generativeai
 ta
 plotly
+scipy
+fpdf2
+niftystocks
