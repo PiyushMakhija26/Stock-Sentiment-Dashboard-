@@ -15,17 +15,12 @@ try:
 except ImportError:
     ns = None
 
+# Try to get API key from secrets at startup
+api_key = None
 try:
     api_key = st.secrets.get("GOOGLE_API_KEY")
-    if api_key:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('models/gemini-2.5-flash')
-    else:
-        model = None
-        st.warning("🚨 Gemini API Key not found. AI features are disabled.", icon="🚨")
-except Exception as e:
-    st.error(f"🚨 Error configuring Gemini: {e}", icon="🚨")
-    model = None
+except Exception:
+    pass
 
 def get_sentiment(text):
     analysis = TextBlob(text)
@@ -244,20 +239,38 @@ def main():
                     st.info("No active breakouts found in top 50 stocks.")
 
         st.divider()
+        st.header("🔑 Gemini API Key")
+        user_api_key = st.text_input("Enter Gemini API Key", value=api_key or "", type="password", help="Get a key from Google AI Studio")
+        
+        model = None
+        if user_api_key:
+            try:
+                genai.configure(api_key=user_api_key)
+                model = genai.GenerativeModel('models/gemini-2.5-flash')
+            except Exception as e:
+                st.error(f"Error configuring Gemini: {e}")
+        else:
+            st.warning("🚨 Gemini API Key not found. AI features are disabled.", icon="🚨")
+            
+        st.divider()
         st.header("🤖 FinBot Assistant")
         if model:
-            if "chat" not in st.session_state:
+            if "chat" not in st.session_state or st.session_state.get("current_api_key") != user_api_key:
                 st.session_state.chat = model.start_chat(history=[])
+                st.session_state.current_api_key = user_api_key
             for message in st.session_state.chat.history:
                 with st.chat_message("You" if message.role == "user" else "FinBot"):
                     st.markdown(message.parts[0].text)
             if prompt := st.chat_input("Ask about markets, stocks, or finance..."):
                 st.chat_message("You").markdown(prompt)
                 with st.spinner("FinBot is thinking..."):
-                    response = st.session_state.chat.send_message(prompt, stream=False)
-                    st.chat_message("FinBot").markdown(response.text)
+                    try:
+                        response = st.session_state.chat.send_message(prompt, stream=False)
+                        st.chat_message("FinBot").markdown(response.text)
+                    except Exception as e:
+                        st.error(f"Failed to get response: {e}")
         else:
-            st.warning("Chatbot is disabled as the Gemini API key is not configured.")
+            st.info("Chatbot is disabled as the Gemini API key is not configured.")
 
     if analyze_button:
         if not stock_ticker:
@@ -411,7 +424,7 @@ def main():
                     st.metric(label="Overall News Sentiment", value=overall_sentiment)
                     def color_sentiment(val):
                         return f'color: {"green" if val == "Positive" else "red" if val == "Negative" else "orange"}'
-                    st.dataframe(df_news.style.applymap(color_sentiment, subset=['Sentiment']), use_container_width=True)
+                    st.dataframe(df_news.style.map(color_sentiment, subset=['Sentiment']), width="stretch")
                 else:
                     st.info("No recent news articles found.")
             
@@ -447,8 +460,11 @@ def main():
                 explanation_prompt = f"Explain the significance of {active_pattern['type'] if active_pattern else 'Support and Resistance levels'} for {stock_ticker} in simple terms. Mention what traders usually do in this scenario."
                 if model:
                     with st.spinner("Generating explanation..."):
-                        expl = model.generate_content(explanation_prompt)
-                        st.markdown(expl.text)
+                        try:
+                            expl = model.generate_content(explanation_prompt)
+                            st.markdown(expl.text)
+                        except Exception as e:
+                            st.error(f"Could not generate explanation: {e}")
                 else:
                     st.info("AI explanations require a Gemini API key.")
 
