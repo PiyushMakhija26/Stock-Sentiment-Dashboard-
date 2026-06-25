@@ -15,10 +15,13 @@ try:
 except ImportError:
     ns = None
 
-# Try to get API key from secrets at startup
-api_key = None
+# Try to get API key from secrets and configure model
+model = None
 try:
-    api_key = st.secrets.get("GOOGLE_API_KEY")
+    api_key = st.secrets.get("GOOGLE_API_KEY") or st.secrets.get("GEMINI_API_KEY")
+    if api_key:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
 except Exception:
     pass
 
@@ -239,25 +242,10 @@ def main():
                     st.info("No active breakouts found in top 50 stocks.")
 
         st.divider()
-        st.header("🔑 Gemini API Key")
-        user_api_key = st.text_input("Enter Gemini API Key", value=api_key or "", type="password", help="Get a key from Google AI Studio")
-        
-        model = None
-        if user_api_key:
-            try:
-                genai.configure(api_key=user_api_key)
-                model = genai.GenerativeModel('models/gemini-2.5-flash')
-            except Exception as e:
-                st.error(f"Error configuring Gemini: {e}")
-        else:
-            st.warning("🚨 Gemini API Key not found. AI features are disabled.", icon="🚨")
-            
-        st.divider()
         st.header("🤖 FinBot Assistant")
         if model:
-            if "chat" not in st.session_state or st.session_state.get("current_api_key") != user_api_key:
+            if "chat" not in st.session_state:
                 st.session_state.chat = model.start_chat(history=[])
-                st.session_state.current_api_key = user_api_key
             for message in st.session_state.chat.history:
                 with st.chat_message("You" if message.role == "user" else "FinBot"):
                     st.markdown(message.parts[0].text)
@@ -268,9 +256,9 @@ def main():
                         response = st.session_state.chat.send_message(prompt, stream=False)
                         st.chat_message("FinBot").markdown(response.text)
                     except Exception as e:
-                        st.error(f"Failed to get response: {e}")
+                        st.error(f"Failed to get response: {e}. Please check if the API key in your secrets manager is valid.")
         else:
-            st.info("Chatbot is disabled as the Gemini API key is not configured.")
+            st.warning("Chatbot is disabled because the Gemini API key is not configured in the secrets manager.")
 
     if analyze_button:
         if not stock_ticker:
@@ -359,7 +347,7 @@ def main():
                         with st.expander("🤖 **View AI-Powered Analysis Summary**", expanded=True):
                             st.markdown(response.text)
                     except Exception as e:
-                        st.warning(f"Could not generate AI summary: {e}")
+                        st.warning(f"Could not generate AI summary: {e}. Please check if the API key in your secrets manager is valid.")
 
 
             tab1, tab2, tab3, tab4 = st.tabs(["📊 Price Analysis", "📑 Fundamental Data", "📰 News & Sentiment", "🧠 Pattern Intelligence"])
@@ -464,9 +452,9 @@ def main():
                             expl = model.generate_content(explanation_prompt)
                             st.markdown(expl.text)
                         except Exception as e:
-                            st.error(f"Could not generate explanation: {e}")
+                            st.error(f"Could not generate explanation: {e}. Please check if the API key in your secrets manager is valid.")
                 else:
-                    st.info("AI explanations require a Gemini API key.")
+                    st.info("AI explanations require a Gemini API key configured in the secrets manager.")
 
                 st.markdown("### 🛠 Detected S/R Levels")
                 st.write(", ".join([f"₹{l}" for l in sr_levels]))
